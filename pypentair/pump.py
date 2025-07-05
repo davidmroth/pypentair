@@ -200,7 +200,7 @@ class Pump:
 
     @selected_program.setter
     def selected_program(self, program):
-        self.send(0x05, [program + 1])
+        self.send(0x05, program + 1)
         # As above, this runs successfully on the pump and the return payload
         # looks like the setting was updated, but requesting the value after
         # updating it, it always returns 1.  Going to have to play more with
