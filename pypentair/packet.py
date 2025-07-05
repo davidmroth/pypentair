@@ -1,6 +1,7 @@
+import os
 import serial
 
-DEBUG = True
+DEBUG = os.getenv("PYPENTAIR_DEBUG", "0") == "1"
 
 ERROR = 0xFF
 
