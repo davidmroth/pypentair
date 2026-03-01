@@ -170,7 +170,11 @@ class Pump:
         return self.send(0x01, address + bytelist(value)).to_int
 
     def get(self, address):
-        return self.send(0x02, address).to_int
+        response = self.send(0x02, address)
+        if response.action == 0xFF:
+            error_code = response.data[0] if response.data else "unknown"
+            raise ValueError(f"Pump returned error code {error_code} for address {address}")
+        return response.to_int
 
     @property
     def time(self):
@@ -235,7 +239,7 @@ class Pump:
             self.send(0x06, state)
             logger.debug("Desired run state: %s  Actual run state: %s", state, self.run)
             if self.run == state:
-                logger.info("Successfully set run: %s", state)
+                logger.info(f"Successfully set run: {state}")
                 return
             sleep(1)
         raise ValueError("Did not achieve desired run state within 2-minutes.")
@@ -254,6 +258,12 @@ class Pump:
     def status(self):
         response = self.send(0x07)
         data = response.data
+        if data is None or len(data) < 15:
+            actual = 0 if data is None else len(data)
+            raise ValueError(
+                f"Truncated status response from pump "
+                f"(expected >= 15 data bytes, got {actual})"
+            )
         return {
             "run": data[0],
             "mode": data[1],

@@ -163,6 +163,13 @@ class Packet:
 
     @property
     def to_int(self):
+        if self.data is None:
+            raise ValueError("Cannot convert empty response to int (data is None)")
+        if len(self.data) < 2:
+            raise ValueError(
+                f"Cannot convert truncated response to int "
+                f"(expected >= 2 data bytes, got {len(self.data)})"
+            )
         return self.data[0] << 8 | self.data[1]
 
     @property
