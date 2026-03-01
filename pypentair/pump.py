@@ -2,6 +2,7 @@ import datetime
 import time
 
 from time import sleep
+from loguru import logger
 
 from .packet import Packet, Style
 
@@ -142,7 +143,7 @@ class Pump:
             time.sleep(Pump.MIN_COMMAND_INTERVAL - elapsed)
         Pump._last_command_time = time.time()
 
-        print(
+        logger.debug(
             f"Sending action {hex(action)} to pump at address {hex(self.address)} with data: {data}"
         )
         return Packet(dst=self.address, action=action, data=data).send()
@@ -186,7 +187,7 @@ class Pump:
     @property
     def remote_control(self):
         response = self.send(0x04)
-        print(f"Remote control state response: {response.data}")
+        logger.debug(f"Remote control state response: {response.data}")
         return response.data[0] == 0xFF
 
     @remote_control.setter
@@ -229,12 +230,12 @@ class Pump:
     @run.setter
     def run(self, state):
         state = 0x0A if state else 0x04
-        print("Attempting to set run:", state)
+        logger.debug("Attempting to set run: %s", state)
         for x in range(0, 120):
             self.send(0x06, state)
-            print("Desired run state:", state, "Actual run state:", self.run)
+            logger.debug("Desired run state: %s  Actual run state: %s", state, self.run)
             if self.run == state:
-                print("Successfully set run:", state)
+                logger.info("Successfully set run: %s", state)
                 return
             sleep(1)
         raise ValueError("Did not achieve desired run state within 2-minutes.")
@@ -242,11 +243,11 @@ class Pump:
     # stop by turning off the run state then turning it back on
     @property
     def stop(self):
-        print("Stopping pump...")
+        logger.debug("Stopping pump...")
         self.run = 0
         sleep(1)
         self.run = 1
-        print("Pump stopped.")
+        logger.debug("Pump stopped.")
         return self.mode
 
     @property
@@ -532,18 +533,18 @@ class Pump:
 
     @rpm.setter
     def rpm(self, rpm):
-        print(f"Setting RPM: {rpm}")
+        logger.debug(f"Setting RPM: {rpm}")
         count = 0
         self.set(SETTING["TARGET_RPM"], rpm)
         while self.rpm != self.trpm:
-            print(f"Target RPM: {self.trpm}, Actual RPM: {self.rpm}")
+            logger.debug(f"Target RPM: {self.trpm}, Actual RPM: {self.rpm}")
             sleep(1)
             count += 1
             if count > 120:
                 self.set(SETTING["TARGET_RPM"], rpm)
                 count = 0
-        print(
-            f"{Style.OKGREEN}Target RPM: {self.trpm}, Actual RPM: {self.rpm}{Style.ENDC}"
+        logger.info(
+            f"Target RPM: {self.trpm}, Actual RPM: {self.rpm}"
         )
 
     @property
@@ -668,7 +669,7 @@ class Program:
     @egg_timer.setter
     def egg_timer(self, duration):
         minutes = 60 * duration[0] + duration[1]
-        print(
+        logger.debug(
             f"Setting egg timer for program {self.id} to {duration} ({minutes} minutes)"
         )
         self.pump.set(self.my(Program.EGG_TIMER), minutes)
@@ -681,7 +682,7 @@ class Program:
     @schedule_start.setter
     def schedule_start(self, time):
         minutes = 60 * time[0] + time[1]
-        print(
+        logger.debug(
             f"Setting schedule start for program {self.id} to {time} ({minutes} minutes)"
         )
         self.pump.set(self.my(Program.SCHEDULE_START), minutes)
@@ -694,7 +695,7 @@ class Program:
     @schedule_end.setter
     def schedule_end(self, time):
         minutes = 60 * time[0] + time[1]
-        print(
+        logger.debug(
             f"Setting schedule end for program {self.id} to {time} ({minutes} minutes)"
         )
         self.pump.set(self.my(Program.SCHEDULE_END), minutes)
