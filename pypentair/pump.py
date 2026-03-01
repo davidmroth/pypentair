@@ -1,4 +1,5 @@
 import datetime
+import time
 
 from time import sleep
 
@@ -125,11 +126,22 @@ def bytelist(x):
 
 
 class Pump:
+    # Minimum delay between consecutive RS485 commands (seconds).
+    # Prevents bus saturation when bulk-reading config registers.
+    MIN_COMMAND_INTERVAL = 0.15  # 150ms
+    _last_command_time = 0  # Class-level: shared across all Pump instances on the same bus
+
     def __init__(self, id):
         # self._address = ADDRESSES["INTELLIFLO_PUMP_" + str(index)]
         self._address = 0x60 + id - 1
 
     def send(self, action, data=None):
+        # Enforce minimum gap between RS485 commands to avoid bus saturation
+        elapsed = time.time() - Pump._last_command_time
+        if elapsed < Pump.MIN_COMMAND_INTERVAL:
+            time.sleep(Pump.MIN_COMMAND_INTERVAL - elapsed)
+        Pump._last_command_time = time.time()
+
         print(
             f"Sending action {hex(action)} to pump at address {hex(self.address)} with data: {data}"
         )
