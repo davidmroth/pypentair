@@ -165,12 +165,13 @@ class Packet:
     def to_int(self):
         if self.data is None:
             raise ValueError("Cannot convert empty response to int (data is None)")
-        if len(self.data) < 2:
-            raise ValueError(
-                f"Cannot convert truncated response to int "
-                f"(expected >= 2 data bytes, got {len(self.data)})"
-            )
-        return self.data[0] << 8 | self.data[1]
+        if len(self.data) == 1:
+            return self.data[0]
+        if len(self.data) >= 2:
+            return self.data[0] << 8 | self.data[1]
+        raise ValueError(
+            f"Cannot convert response to int (unexpected data length {len(self.data)})"
+        )
 
     @property
     def payload(self):
