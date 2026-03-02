@@ -664,6 +664,26 @@ class Program:
         return self.pump.set(self.my(Program.RPM), rpm)
 
     @property
+    def speed(self):
+        """Get the program speed value (RPM or GPM depending on speed_type)."""
+        return self.rpm
+
+    @speed.setter
+    def speed(self, value):
+        """Set the program speed value."""
+        self.rpm = value
+
+    @property
+    def speed_type(self):
+        """Infer the speed unit from the stored value.
+
+        Pentair IntelliFlo pumps store RPM (400-3450) and GPM (15-140)
+        in the same register. Values <= 140 are GPM; > 140 are RPM.
+        """
+        value = self.rpm
+        return "GPM" if 0 < value <= 140 else "RPM"
+
+    @property
     def mode(self):
         return self.pump.get(self.my(Program.MODE))
 
@@ -673,8 +693,12 @@ class Program:
 
     @property
     def egg_timer(self):
-        minutes = self.pump.get(self.my(Program.EGG_TIMER))
-        return [int(minutes / 60), minutes % 60]
+        try:
+            minutes = self.pump.get(self.my(Program.EGG_TIMER))
+            return [int(minutes / 60), minutes % 60]
+        except (ValueError, Exception) as e:
+            logger.debug(f"Could not read egg_timer for program {self.id}: {e}")
+            return [0, 0]
 
     @egg_timer.setter
     def egg_timer(self, duration):
@@ -686,8 +710,12 @@ class Program:
 
     @property
     def schedule_start(self):
-        minutes = self.pump.get(self.my(Program.SCHEDULE_START))
-        return [int(minutes / 60), minutes % 60]
+        try:
+            minutes = self.pump.get(self.my(Program.SCHEDULE_START))
+            return [int(minutes / 60), minutes % 60]
+        except (ValueError, Exception) as e:
+            logger.debug(f"Could not read schedule_start for program {self.id}: {e}")
+            return [0, 0]
 
     @schedule_start.setter
     def schedule_start(self, time):
@@ -699,8 +727,12 @@ class Program:
 
     @property
     def schedule_end(self):
-        minutes = self.pump.get(self.my(Program.SCHEDULE_END))
-        return [int(minutes / 60), minutes % 60]
+        try:
+            minutes = self.pump.get(self.my(Program.SCHEDULE_END))
+            return [int(minutes / 60), minutes % 60]
+        except (ValueError, Exception) as e:
+            logger.debug(f"Could not read schedule_end for program {self.id}: {e}")
+            return [0, 0]
 
     @schedule_end.setter
     def schedule_end(self, time):
