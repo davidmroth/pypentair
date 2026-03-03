@@ -363,8 +363,7 @@ class Pump:
 
     @property
     def dt(self):
-        return self.send(ACTIONS["GET_DATETIME"]).payload
-        # return self.send(0x03)
+        return self.send(ACTIONS["GET_DATETIME"]).data
 
     # Need to actually implement this one
     # Error 19: ?
