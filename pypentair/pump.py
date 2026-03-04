@@ -167,7 +167,18 @@ class Pump:
         # if current_value == value:
         #    print(f"Value for {address} is already set to {value}, not sending.")
         #    return current_value
-        return self.send(0x01, address + bytelist(value)).to_int
+        logger.debug(f"[PROGRAM-SAVE] Pump.set() addr={address}, value={value}, bytes={bytelist(value)}")
+        response = self.send(0x01, address + bytelist(value))
+        logger.debug(
+            f"[PROGRAM-SAVE] Pump.set() response: action={hex(response.action)}, "
+            f"data={response.data}"
+        )
+        if response.action == 0xFF:
+            error_code = response.data[0] if response.data else "unknown"
+            raise ValueError(
+                f"Pump returned error code {error_code} for set address {address} value {value}"
+            )
+        return response.to_int
 
     def get(self, address):
         response = self.send(0x02, address)
@@ -656,11 +667,17 @@ class Program:
 
     @property
     def rpm(self):
-        return self.pump.get(self.my(Program.RPM))
+        addr = self.my(Program.RPM)
+        value = self.pump.get(addr)
+        logger.debug(f"[PROGRAM-SAVE] Program {self.id} read rpm: addr={addr} -> {value}")
+        return value
 
     @rpm.setter
     def rpm(self, rpm):
-        return self.pump.set(self.my(Program.RPM), rpm)
+        addr = self.my(Program.RPM)
+        logger.info(f"[PROGRAM-SAVE] Program {self.id} write rpm: addr={addr}, value={rpm}")
+        result = self.pump.set(addr, rpm)
+        logger.info(f"[PROGRAM-SAVE] Program {self.id} write rpm result: {result}")
 
     @property
     def speed(self):
@@ -684,11 +701,17 @@ class Program:
 
     @property
     def mode(self):
-        return self.pump.get(self.my(Program.MODE))
+        addr = self.my(Program.MODE)
+        value = self.pump.get(addr)
+        logger.debug(f"[PROGRAM-SAVE] Program {self.id} read mode: addr={addr} -> {value}")
+        return value
 
     @mode.setter
     def mode(self, mode):
-        self.pump.set(self.my(Program.MODE), mode)
+        addr = self.my(Program.MODE)
+        logger.info(f"[PROGRAM-SAVE] Program {self.id} write mode: addr={addr}, value={mode}")
+        result = self.pump.set(addr, mode)
+        logger.info(f"[PROGRAM-SAVE] Program {self.id} write mode result: {result}")
 
     @property
     def egg_timer(self):
