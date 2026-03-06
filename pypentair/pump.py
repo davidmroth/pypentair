@@ -135,6 +135,7 @@ class Pump:
     def __init__(self, id):
         # self._address = ADDRESSES["INTELLIFLO_PUMP_" + str(index)]
         self._address = 0x60 + id - 1
+        self._program_speed_types = {}
 
     def send(self, action, data=None):
         # Enforce minimum gap between RS485 commands to avoid bus saturation
@@ -652,6 +653,7 @@ class Program:
     EGG_TIMER = [0x03, 0xA5]
     MODE = [0x03, 0x85]
     RPM = [0x03, 0x8D]
+    RPM_ALT = [0x03, 0xBB]
 
     MANUAL_MODE = 0
     EGG_TIMER_MODE = 1
@@ -665,29 +667,120 @@ class Program:
     def my(self, address):
         return [address[0], address[1] + self.id - 1]
 
+    def _supports_alt_rpm(self):
+        return self.id <= 4
+
+    def _get_cached_speed_type(self):
+        cache = getattr(self.pump, "_program_speed_types", None)
+        if isinstance(cache, dict):
+            return cache.get(self.id)
+        return None
+
+    def _set_cached_speed_type(self, speed_type):
+        cache = getattr(self.pump, "_program_speed_types", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self.pump._program_speed_types = cache
+        cache[self.id] = speed_type
+
+    def _read_primary_speed(self):
+        return self.pump.get(self.my(Program.RPM))
+
+    def _read_alt_rpm(self):
+        if not self._supports_alt_rpm():
+            return None
+        try:
+            return self.pump.get(self.my(Program.RPM_ALT))
+        except Exception as exc:
+            logger.debug(
+                f"[PROGRAM-SAVE] Program {self.id} could not read alt rpm register: {exc}"
+            )
+            return None
+
+    def _infer_speed_type(self, primary_value=None, alt_value=None):
+        cached_speed_type = self._get_cached_speed_type()
+        if cached_speed_type in {"RPM", "GPM"}:
+            return cached_speed_type
+
+        if primary_value is None:
+            primary_value = self._read_primary_speed()
+        if alt_value is None:
+            alt_value = self._read_alt_rpm()
+
+        # The primary register behaves like the GPM register for values below
+        # the 140 GPM ceiling. When it sits at the ceiling and the alternate
+        # register has a valid RPM-sized value, treat the program as RPM-based.
+        if 0 < primary_value < 140:
+            return "GPM"
+        if primary_value == 140 and alt_value is not None and alt_value >= 450:
+            return "RPM"
+        if primary_value > 140:
+            return "RPM"
+        return "GPM" if 0 < primary_value <= 140 else "RPM"
+
+    def _write_speed_registers(self, value, speed_type):
+        primary_addr = self.my(Program.RPM)
+        logger.info(
+            f"[PROGRAM-SAVE] Program {self.id} write primary speed: addr={primary_addr}, value={value}"
+        )
+        primary_result = self.pump.set(primary_addr, value)
+        logger.info(
+            f"[PROGRAM-SAVE] Program {self.id} write primary speed result: {primary_result}"
+        )
+
+        self._set_cached_speed_type(speed_type)
+
+        if speed_type == "RPM" and self._supports_alt_rpm():
+            alt_addr = self.my(Program.RPM_ALT)
+            try:
+                logger.info(
+                    f"[PROGRAM-SAVE] Program {self.id} mirror alt speed: addr={alt_addr}, value={value}"
+                )
+                alt_result = self.pump.set(alt_addr, value)
+                logger.info(
+                    f"[PROGRAM-SAVE] Program {self.id} mirror alt speed result: {alt_result}"
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"[PROGRAM-SAVE] Program {self.id} alt rpm mirror failed: {exc}"
+                )
+
     @property
     def rpm(self):
         addr = self.my(Program.RPM)
-        value = self.pump.get(addr)
-        logger.debug(f"[PROGRAM-SAVE] Program {self.id} read rpm: addr={addr} -> {value}")
+        primary_value = self._read_primary_speed()
+        alt_value = self._read_alt_rpm()
+        speed_type = self._infer_speed_type(primary_value, alt_value)
+        value = primary_value
+
+        if speed_type == "RPM" and alt_value is not None and alt_value >= 450:
+            value = alt_value
+            logger.debug(
+                f"[PROGRAM-SAVE] Program {self.id} read rpm using alt register: "
+                f"primary={primary_value}, alt={alt_value}"
+            )
+        else:
+            logger.debug(
+                f"[PROGRAM-SAVE] Program {self.id} read rpm: addr={addr} -> {primary_value}"
+            )
         return value
 
     @rpm.setter
     def rpm(self, rpm):
-        addr = self.my(Program.RPM)
-        logger.info(f"[PROGRAM-SAVE] Program {self.id} write rpm: addr={addr}, value={rpm}")
-        result = self.pump.set(addr, rpm)
-        logger.info(f"[PROGRAM-SAVE] Program {self.id} write rpm result: {result}")
+        self._write_speed_registers(rpm, "RPM")
 
     @property
     def speed(self):
         """Get the program speed value (RPM or GPM depending on speed_type)."""
+        primary_value = self._read_primary_speed()
+        if self.speed_type == "GPM" and 0 < primary_value <= 140:
+            return primary_value
         return self.rpm
 
     @speed.setter
     def speed(self, value):
         """Set the program speed value."""
-        self.rpm = value
+        self._write_speed_registers(value, "GPM")
 
     @property
     def speed_type(self):
@@ -696,8 +789,9 @@ class Program:
         Pentair IntelliFlo pumps store RPM (400-3450) and GPM (15-140)
         in the same register. Values <= 140 are GPM; > 140 are RPM.
         """
-        value = self.rpm
-        return "GPM" if 0 < value <= 140 else "RPM"
+        primary_value = self._read_primary_speed()
+        alt_value = self._read_alt_rpm()
+        return self._infer_speed_type(primary_value, alt_value)
 
     @property
     def mode(self):
