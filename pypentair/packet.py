@@ -2,6 +2,7 @@ import os
 import serial
 
 DEBUG = os.getenv("PYPENTAIR_DEBUG", "0") == "1"
+CONTROLLER_SOURCE = 0x10
 
 ERROR = 0xFF
 
@@ -65,7 +66,7 @@ class Packet:
     HEADER = 0xA5
     VERSION = 0x00
 
-    def __init__(self, *args, src=0x21, dst=None, action=None, data=None):
+    def __init__(self, *args, src=CONTROLLER_SOURCE, dst=None, action=None, data=None):
         if args != ():
             self.bytes = args
         else:

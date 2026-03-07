@@ -6,6 +6,12 @@ from loguru import logger
 
 from .packet import Packet, Style
 
+CONTROLLER_SOURCE = 0x10
+REMOTE_CONTROL_EXTERNAL = 0xFF
+REMOTE_CONTROL_INTERNAL = 0x00
+PUMP_RUNNING = 0x0A
+PUMP_STOPPED = 0x04
+
 ACTIONS = {
     "__0x08__": 0x08,
     "__0x09__": 0x09,
@@ -132,9 +138,10 @@ class Pump:
     MIN_COMMAND_INTERVAL = 0.15  # 150ms
     _last_command_time = 0  # Class-level: shared across all Pump instances on the same bus
 
-    def __init__(self, id):
+    def __init__(self, id, controller_source=CONTROLLER_SOURCE):
         # self._address = ADDRESSES["INTELLIFLO_PUMP_" + str(index)]
         self._address = 0x60 + id - 1
+        self._controller_source = controller_source
         self._program_speed_types = {}
 
     def send(self, action, data=None):
@@ -147,20 +154,48 @@ class Pump:
         logger.debug(
             f"Sending action {hex(action)} to pump at address {hex(self.address)} with data: {data}"
         )
-        return Packet(dst=self.address, action=action, data=data).send()
+        return Packet(
+            dst=self.address,
+            src=self._controller_source,
+            action=action,
+            data=data,
+        ).send()
 
     def ping(self):
         response = self.send(0x00)
         if response.payload == [
             Packet.HEADER,
             Packet.VERSION,
-            0x21,
+            self._controller_source,
             self.address,
             0,
             0,
         ]:
             return True
         return False
+
+    def _set_run_state_once(self, state):
+        response = self.send(0x06, state)
+        if response.action == 0xFF:
+            error_code = response.data[0] if response.data else "unknown"
+            raise ValueError(f"Pump returned error code {error_code} for run state {state}")
+        return response
+
+    def _apply_manual_run(self, rpm):
+        rpm = int(rpm)
+        self.remote_control = True
+        self._set_run_state_once(PUMP_RUNNING)
+        self.trpm = rpm
+        self.remote_control = True
+        return self.status
+
+    def manual_run(self, rpm):
+        logger.info(f"Applying manual run at {rpm} RPM")
+        return self._apply_manual_run(rpm)
+
+    def refresh_manual_run(self, rpm):
+        logger.debug(f"Refreshing manual run at {rpm} RPM")
+        return self._apply_manual_run(rpm)
 
     def set(self, address, value):
         # if the value is the same as the current value, don't send it
@@ -208,7 +243,7 @@ class Pump:
 
     @remote_control.setter
     def remote_control(self, state):
-        state = 0xFF if state else 0x00
+        state = REMOTE_CONTROL_EXTERNAL if state else REMOTE_CONTROL_INTERNAL
         response = self.send(0x04, state)
         if response.data[0] == 0x00:
             response.close()
@@ -245,10 +280,10 @@ class Pump:
 
     @run.setter
     def run(self, state):
-        state = 0x0A if state else 0x04
+        state = PUMP_RUNNING if state else PUMP_STOPPED
         logger.debug("Attempting to set run: %s", state)
         for x in range(0, 120):
-            self.send(0x06, state)
+            self._set_run_state_once(state)
             logger.debug("Desired run state: %s  Actual run state: %s", state, self.run)
             if self.run == state:
                 logger.info(f"Successfully set run: {state}")
