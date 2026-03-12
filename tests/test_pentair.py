@@ -4,7 +4,7 @@ from nose.plugins.attrib import attr
 from pypentair import Packet, Pump
 
 PAYLOAD_HEADER  = 0xA5
-SRC             = 0x21
+SRC             = 0x10
 DST             = 0x60
 GET_PUMP_STATUS = 0x07
 REMOTE_CONTROL  = 0x04
@@ -297,11 +297,11 @@ class TestPacketMethods(unittest.TestCase):
 
     def test_checkbytes(self):
         packet = Packet(dst=DST, action=PUMP_PROGRAM, data=[SET, RPM, 5, 220])
-        self.assertEqual(packet.checkbytes, [2, 210])
+        self.assertEqual(packet.checkbytes, [2, 193])
 
     def test_checksum(self):
         packet = Packet(dst=DST, action=PUMP_PROGRAM, data=[SET, RPM, 5, 220])
-        self.assertEqual(packet.checksum, 2*256 + 210)
+        self.assertEqual(packet.checksum, 2*256 + 193)
 
 ### Key=Value Construction
 
@@ -312,7 +312,7 @@ class TestPacketMethods(unittest.TestCase):
         self.assertEqual(packet.action, GET_PUMP_STATUS)
         self.assertEqual(packet.data_length, 0)
         self.assertEqual(packet.data, None)
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, GET_PUMP_STATUS, 0, 1, 45])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, GET_PUMP_STATUS, 0, 1, 28])
 
     def test_kv_construction_single_data_byte(self):
         packet = Packet(dst=DST, action=REMOTE_CONTROL, data=ON)
@@ -321,7 +321,7 @@ class TestPacketMethods(unittest.TestCase):
         self.assertEqual(packet.action, REMOTE_CONTROL)
         self.assertEqual(packet.data_length, 1)
         self.assertEqual(packet.data, [ON])
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, REMOTE_CONTROL, 1, ON, 2, 42])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, REMOTE_CONTROL, 1, ON, 2, 25])
 
     def test_kv_construction_single_data_byte_list(self):
         packet = Packet(dst=DST, action=REMOTE_CONTROL, data=[ON])
@@ -330,7 +330,7 @@ class TestPacketMethods(unittest.TestCase):
         self.assertEqual(packet.action, REMOTE_CONTROL)
         self.assertEqual(packet.data_length, 1)
         self.assertEqual(packet.data, [ON])
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, REMOTE_CONTROL, 1, ON, 2, 42])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, REMOTE_CONTROL, 1, ON, 2, 25])
 
     def test_kv_construction_multiple_data_bytes(self):
         packet = Packet(dst=DST, action=PUMP_PROGRAM, data=[SET, RPM, 5, 220])
@@ -339,7 +339,7 @@ class TestPacketMethods(unittest.TestCase):
         self.assertEqual(packet.action, PUMP_PROGRAM)
         self.assertEqual(packet.data_length, 4)
         self.assertEqual(packet.data, [SET, RPM, 5, 220])
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, PUMP_PROGRAM, 4, SET, RPM, 5, 220, 2, 210])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, PUMP_PROGRAM, 4, SET, RPM, 5, 220, 2, 193])
 
 ### Byte Construction, No Header, No Data
 
@@ -350,16 +350,16 @@ class TestPacketMethods(unittest.TestCase):
         self.assertEqual(packet.action, GET_PUMP_STATUS)
         self.assertEqual(packet.data_length, 0)
         self.assertEqual(packet.data, None)
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, GET_PUMP_STATUS, 0, 1, 45])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, GET_PUMP_STATUS, 0, 1, 28])
 
     def test_byte_construction_no_header_no_data_valid_checksum(self):
-        packet = Packet([DST, SRC, GET_PUMP_STATUS, 0, 1, 45])
+        packet = Packet([DST, SRC, GET_PUMP_STATUS, 0, 1, 28])
         self.assertEqual(packet.dst, DST)
         self.assertEqual(packet.src, SRC)
         self.assertEqual(packet.action, GET_PUMP_STATUS)
         self.assertEqual(packet.data_length, 0)
         self.assertEqual(packet.data, None)
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, GET_PUMP_STATUS, 0, 1, 45])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, GET_PUMP_STATUS, 0, 1, 28])
 
     def test_byte_construction_no_header_no_data_invalid_checksum(self):
         with self.assertRaises(ValueError):
@@ -374,16 +374,16 @@ class TestPacketMethods(unittest.TestCase):
         self.assertEqual(packet.action, GET_PUMP_STATUS)
         self.assertEqual(packet.data_length, 0)
         self.assertEqual(packet.data, None)
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, GET_PUMP_STATUS, 0, 1, 45])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, GET_PUMP_STATUS, 0, 1, 28])
 
     def test_byte_construction_with_header_no_data_valid_checksum(self):
-        packet = Packet([0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, GET_PUMP_STATUS, 0, 1, 45])
+        packet = Packet([0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, GET_PUMP_STATUS, 0, 1, 28])
         self.assertEqual(packet.dst, DST)
         self.assertEqual(packet.src, SRC)
         self.assertEqual(packet.action, GET_PUMP_STATUS)
         self.assertEqual(packet.data_length, 0)
         self.assertEqual(packet.data, None)
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, GET_PUMP_STATUS, 0, 1, 45])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, GET_PUMP_STATUS, 0, 1, 28])
 
     def test_byte_construction_with_header_no_data_invalid_checksum(self):
         with self.assertRaises(ValueError):
@@ -398,16 +398,16 @@ class TestPacketMethods(unittest.TestCase):
         self.assertEqual(packet.action, REMOTE_CONTROL)
         self.assertEqual(packet.data_length, 1)
         self.assertEqual(packet.data, [ON])
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, REMOTE_CONTROL, 1, ON, 2, 42])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, REMOTE_CONTROL, 1, ON, 2, 25])
 
     def test_byte_construction_no_header_single_data_byte_valid_checksum(self):
-        packet = Packet([DST, SRC, REMOTE_CONTROL, 1, ON, 2, 42])
+        packet = Packet([DST, SRC, REMOTE_CONTROL, 1, ON, 2, 25])
         self.assertEqual(packet.dst, DST)
         self.assertEqual(packet.src, SRC)
         self.assertEqual(packet.action, REMOTE_CONTROL)
         self.assertEqual(packet.data_length, 1)
         self.assertEqual(packet.data, [ON])
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, REMOTE_CONTROL, 1, ON, 2, 42])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, REMOTE_CONTROL, 1, ON, 2, 25])
 
     def test_byte_construction_no_header_single_data_byte_invalid_checksum(self):
         with self.assertRaises(ValueError):
@@ -422,16 +422,16 @@ class TestPacketMethods(unittest.TestCase):
         self.assertEqual(packet.action, REMOTE_CONTROL)
         self.assertEqual(packet.data_length, 1)
         self.assertEqual(packet.data, [ON])
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, REMOTE_CONTROL, 1, ON, 2, 42])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, REMOTE_CONTROL, 1, ON, 2, 25])
 
     def test_byte_construction_with_header_single_data_byte_valid_checksum(self):
-        packet = Packet([0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, REMOTE_CONTROL, 1, ON, 2, 42])
+        packet = Packet([0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, REMOTE_CONTROL, 1, ON, 2, 25])
         self.assertEqual(packet.dst, DST)
         self.assertEqual(packet.src, SRC)
         self.assertEqual(packet.action, REMOTE_CONTROL)
         self.assertEqual(packet.data_length, 1)
         self.assertEqual(packet.data, [ON])
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, REMOTE_CONTROL, 1, ON, 2, 42])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, REMOTE_CONTROL, 1, ON, 2, 25])
 
     def test_byte_construction_with_header_single_data_byte_invalid_checksum(self):
         with self.assertRaises(ValueError):
@@ -446,16 +446,16 @@ class TestPacketMethods(unittest.TestCase):
         self.assertEqual(packet.action, PUMP_PROGRAM)
         self.assertEqual(packet.data_length, 4)
         self.assertEqual(packet.data, [SET, RPM, 5, 220])
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, PUMP_PROGRAM, 4, SET, RPM, 5, 220, 2, 210])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, PUMP_PROGRAM, 4, SET, RPM, 5, 220, 2, 193])
 
     def test_byte_construction_no_header_multiple_data_bytes_valid_checksum(self):
-        packet = Packet([DST, SRC, PUMP_PROGRAM, 4, SET, RPM, 5, 220, 2, 210])
+        packet = Packet([DST, SRC, PUMP_PROGRAM, 4, SET, RPM, 5, 220, 2, 193])
         self.assertEqual(packet.dst, DST)
         self.assertEqual(packet.src, SRC)
         self.assertEqual(packet.action, PUMP_PROGRAM)
         self.assertEqual(packet.data_length, 4)
         self.assertEqual(packet.data, [SET, RPM, 5, 220])
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, PUMP_PROGRAM, 4, SET, RPM, 5, 220, 2, 210])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, PUMP_PROGRAM, 4, SET, RPM, 5, 220, 2, 193])
 
     def test_byte_construction_no_header_multiple_data_bytes_invalid_checksum(self):
         with self.assertRaises(ValueError):
@@ -470,16 +470,16 @@ class TestPacketMethods(unittest.TestCase):
         self.assertEqual(packet.action, PUMP_PROGRAM)
         self.assertEqual(packet.data_length, 4)
         self.assertEqual(packet.data, [SET, RPM, 5, 220])
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, PUMP_PROGRAM, 4, SET, RPM, 5, 220, 2, 210])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, PUMP_PROGRAM, 4, SET, RPM, 5, 220, 2, 193])
 
     def test_byte_construction_with_header_multiple_data_bytes_valid_checksum(self):
-        packet = Packet([0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, PUMP_PROGRAM, 4, SET, RPM, 5, 220, 2, 210])
+        packet = Packet([0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, PUMP_PROGRAM, 4, SET, RPM, 5, 220, 2, 193])
         self.assertEqual(packet.dst, DST)
         self.assertEqual(packet.src, SRC)
         self.assertEqual(packet.action, PUMP_PROGRAM)
         self.assertEqual(packet.data_length, 4)
         self.assertEqual(packet.data, [SET, RPM, 5, 220])
-        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, PUMP_PROGRAM, 4, SET, RPM, 5, 220, 2, 210])
+        self.assertEqual(packet.bytes, [0xFF, 0x00, 0xFF, PAYLOAD_HEADER, VERSION, DST, SRC, PUMP_PROGRAM, 4, SET, RPM, 5, 220, 2, 193])
 
     def test_byte_construction_with_header_multiple_data_bytes_invalid_checksum(self):
         with self.assertRaises(ValueError):

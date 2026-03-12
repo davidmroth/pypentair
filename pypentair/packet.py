@@ -1,22 +1,24 @@
+import os
 import serial
 
-DEBUG = False
+DEBUG = os.getenv("PYPENTAIR_DEBUG", "0") == "1"
+CONTROLLER_SOURCE = 0x10
 
 ERROR = 0xFF
 
 
-class Style():
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
+class Style:
+    HEADER = "\033[95m"
+    OKBLUE = "\033[94m"
+    OKGREEN = "\033[92m"
+    WARNING = "\033[93m"
+    FAIL = "\033[91m"
+    ENDC = "\033[0m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
 
 
-class Fields():
+class Fields:
     PREAMBLE_0 = 0
     PREAMBLE_1 = 1
     PREAMBLE_2 = 2
@@ -31,12 +33,14 @@ class Fields():
 
 class RS485(serial.Serial):
     def __init__(self):
-        super().__init__(port='/dev/ttyUSB0',
-                         baudrate=9600,
-                         parity=serial.PARITY_NONE,
-                         stopbits=serial.STOPBITS_ONE,
-                         bytesize=serial.EIGHTBITS,
-                         timeout=1)
+        super().__init__(
+            port="/dev/ttyUSB0",
+            baudrate=9600,
+            parity=serial.PARITY_NONE,
+            stopbits=serial.STOPBITS_ONE,
+            bytesize=serial.EIGHTBITS,
+            timeout=1,
+        )
 
     def get_response(self):
         pbytes = []
@@ -50,19 +54,19 @@ class RS485(serial.Serial):
                     data_length = ord(self.read())
                     pbytes.append(data_length)
                     pbytes.extend(list(self.read(data_length)))  # Data
-                    pbytes.extend(list(self.read(2)))            # Checksum
+                    pbytes.extend(list(self.read(2)))  # Checksum
                     return Packet(pbytes)
 
 
 rs485 = RS485()
 
 
-class Packet():
+class Packet:
     PREAMBLE = [0xFF, 0x00, 0xFF]
     HEADER = 0xA5
     VERSION = 0x00
 
-    def __init__(self, *args, src=0x21, dst=None, action=None, data=None):
+    def __init__(self, *args, src=CONTROLLER_SOURCE, dst=None, action=None, data=None):
         if args != ():
             self.bytes = args
         else:
@@ -74,7 +78,24 @@ class Packet():
             else:
                 self.data = data
 
+    def close(self):
+        """Close the RS485 serial port if open."""
+        if rs485.is_open:
+            if DEBUG:
+                print(Style.WARNING + "Closing RS485 port." + Style.ENDC)
+            rs485.close()
+
     def send(self):
+        if DEBUG:
+            print(Style.HEADER + "Sending packet:" + Style.ENDC)
+            print("   Destination:\t\t", self.dst)
+            print("   Source:\t\t", self.src)
+            print("   Action:\t\t", self.action)
+            print("   Data Length:\t\t", self.data_length)
+            print("   Data:\t\t", self.data)
+
+        if not rs485.is_open:
+            rs485.open()
         rs485.write(bytearray(self.bytes))
         if DEBUG:
             print()
@@ -120,7 +141,7 @@ class Packet():
         self.action = packet[Fields.ACTION]
 
         if data_end > Fields.DATA:
-            self.data = packet[Fields.DATA:data_end]
+            self.data = packet[Fields.DATA : data_end]
         else:
             self.data = None
 
@@ -132,7 +153,7 @@ class Packet():
 
     @property
     def checkbytes(self):
-        return list(self.checksum.to_bytes(2, byteorder='big'))
+        return list(self.checksum.to_bytes(2, byteorder="big"))
 
     @property
     def data_length(self):
@@ -143,14 +164,37 @@ class Packet():
 
     @property
     def to_int(self):
-        return(self.data[0] << 8 | self.data[1])
+        if self.data is None:
+            raise ValueError("Cannot convert empty response to int (data is None)")
+        if len(self.data) == 1:
+            return self.data[0]
+        if len(self.data) >= 2:
+            return self.data[0] << 8 | self.data[1]
+        raise ValueError(
+            f"Cannot convert response to int (unexpected data length {len(self.data)})"
+        )
 
     @property
     def payload(self):
         if self.data_length:
-            return [Packet.HEADER, Packet.VERSION, self.dst, self.src, self.action, self.data_length] + self.data
+            return [
+                Packet.HEADER,
+                Packet.VERSION,
+                self.dst,
+                self.src,
+                self.action,
+                self.data_length,
+            ] + self.data
         else:
-            return [Packet.HEADER, Packet.VERSION, self.dst, self.src, self.action, self.data_length]
+            return [
+                Packet.HEADER,
+                Packet.VERSION,
+                self.dst,
+                self.src,
+                self.action,
+                self.data_length,
+            ]
+
 
 #     def inspect(self):
 #         print("   Destination:\t\t", pp(self.dst), lookup(ADDRESSES, self.dst))

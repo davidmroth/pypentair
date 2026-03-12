@@ -1,135 +1,227 @@
 import datetime
+import time
 
 from time import sleep
+from loguru import logger
 
 from .packet import Packet, Style
 
+CONTROLLER_SOURCE = 0x10
+REMOTE_CONTROL_EXTERNAL = 0xFF
+REMOTE_CONTROL_INTERNAL = 0x00
+PUMP_RUNNING = 0x0A
+PUMP_STOPPED = 0x04
+
 ACTIONS = {
-    '__0x08__':             0x08,
-    '__0x09__':             0x09,
-    '__0x0A__':             0x0A,
-    'SET_DATETIME':         0x85, # Need to figure out how these align with the BROADCAST_ACTIONS, GET, and SET
-    'GET_DATETIME':         0xC5,
-    'GET_PUMP_STATUS':      0xC7,
-    'GET_SCHEDULE_DETAILS': 0xD1,
-    'GET_PUMP_CONFIG':      0xD8,
-    'ERROR':                0xFF,
+    "__0x08__": 0x08,
+    "__0x09__": 0x09,
+    "__0x0A__": 0x0A,
+    "SET_DATETIME": 0x85,  # Need to figure out how these align with the BROADCAST_ACTIONS, GET, and SET
+    "GET_DATETIME": 0xC5,
+    "GET_PUMP_STATUS": 0xC7,
+    "GET_SCHEDULE_DETAILS": 0xD1,
+    "GET_PUMP_CONFIG": 0xD8,
+    "ERROR": 0xFF,
 }
 
 SETTING = {
-    '__0x01, 0xC4__':       [0x01, 0xC4],   # 100
-    '__0x01, 0xFE__':       [0x01, 0xFE],   # Changes often, generally in increments of 0x40.
-
-    'ACTUAL_RPM':           [0x02, 0x06],
-    '__0x02, 0x0A__':       [0x02, 0x0A],   # Always just a bit lower than Watts from PUMP_STATUS
-    '__0x02, 0x1A__':       [0x02, 0x1A],   # [0x00, 0x00] to [0x51, 0x07] on SVRS alarm, back to 0 on reprime
-    'SVRS_ALARM':           [0x02, 0x1C],   # [0x00, 0x00] to [0xff, 0xff] on SVRS alarm, back to 0 on reprime
-    'CONTRAST':             [0x02, 0xBD],
-    'ADDRESS':              [0x02, 0xC0],
-    'TARGET_RPM':           [0x02, 0xC4],
-    'RAMP':                 [0x02, 0xD1],
-    'PRIME_DELAY':          [0x02, 0xD2],
-    'GPM':                  [0x02, 0xE4],
-
-    '__0x03, 0x00__':       [0x03, 0x00],   # 7860
-    '__0x03, 0x16__':       [0x03, 0x16],   # 1600
-    'PRIME_SENSITIVITY':    [0x03, 0x17],
-    '__0x03, 0x18__':       [0x03, 0x18],   # 50    # Vacuum Flow?
-    '__0x03, 0x19__':       [0x03, 0x19],   # 55    # Max Priming Flow?
-    'SVRS_RESTART_TIMER':   [0x03, 0x1A],
-    'SVRS_RESTART_ENABLE':  [0x03, 0x1B],
-    'RUNNING_PROGRAM':      [0x03, 0x21],
-    '__0x03, 0x22__':       [0x03, 0x22],   # 0
-    '__0x03, 0x23__':       [0x03, 0x23],   # 0
-    '__0x03, 0x24__':       [0x03, 0x24],   # 0
-    '__0x03, 0x25__':       [0x03, 0x25],   # 0
-    '__0x03, 0x26__':       [0x03, 0x26],   # 0
-    '__0x03, 0x27__':       [0x03, 0x27],   # Through [0x03, 0x2A] -- offset by Program id.  Related to Program RPM?
-    'SET_TIMER':            [0x03, 0x2B],
-    '__0x03, 0x2C__':       [0x03, 0x2C],   # 2
-    '__0x03, 0x2D__':       [0x03, 0x2D],   # 1
-    '__0x03, 0x2E__':       [0x03, 0x2E],   # 0
-    'CELSIUS':              [0x03, 0x30],
-    '24_HOUR':              [0x03, 0x31],
-    '__0x03, 0x34__':       [0x03, 0x34],   # 3445
-    '__0x03, 0x35__':       [0x03, 0x35],   # 1115
-    '__0x03, 0x36__':       [0x03, 0x36],   # 10  Error 25 if I try to set it to anything
-    '__0x03, 0x37__':       [0x03, 0x37],   # 1
-    '__0x03, 0x38__':       [0x03, 0x38],   # 0
-    '__0x03, 0x39__':       [0x03, 0x39],   # 3445
-    '__0x03, 0x3A__':       [0x03, 0x3A],   # 1115
-    '__0x03, 0x3B__':       [0x03, 0x3B],   # 10  Error 25 if I try to set it to anything
-    '__0x03, 0x3C__':       [0x03, 0x3C],   # 2
-    '__0x03, 0x3D__':       [0x03, 0x3D],   # 0
-    '__0x03, 0x3E__':       [0x03, 0x3E],   # 0
-
-    'PROGRAM_MODE':         [0x03, 0x85],   # Through [0x03, 0x8C] -- offset by Program id
-    'PROGRAM_RPM':          [0x03, 0x8D],   # Through [0x03, 0x94] -- offset by Program id
-    'SCHEDULE_START':       [0x03, 0x95],   # Through [0x03, 0x9C] -- offset by Program id
-    'SCHEDULE_END':         [0x03, 0x9D],   # Through [0x03, 0xA4] -- offset by Program id
-    'EGG_TIMER':            [0x03, 0xA5],   # Through [0x03, 0xAC] -- offset by Program id
-
-    'TIME_OUT_TIMER':       [0x03, 0xAD],
-    'QUICK_RPM':            [0x03, 0xAE],
-    'QUICK_TIMER':          [0x03, 0xAF],
-    'ANTIFREEZE_ENABLE':    [0x03, 0xB0],
-    'ANTIFREEZE_RPM':       [0x03, 0xB1],
-    'ANTIFREEZE_TEMP':      [0x03, 0xB2],
-    'PRIME_ENABLE':         [0x03, 0xB3],
-    '__0x03, 0xB4__':       [0x03, 0xB4],   # 3450 Prime RPM?
-    'PRIME_MAX_TIME':       [0x03, 0xB5],
-    'MIN_RPM':              [0x03, 0xB6],
-    'MAX_RPM':              [0x03, 0xB7],
-    'PASSWORD_ENABLE':      [0x03, 0xB8],
-    'PASSWORD_TIMEOUT':     [0x03, 0xB9],
-    'PASSWORD':             [0x03, 0xBA],
-    'PROGRAM_RPM_ALT':      [0x03, 0xBB],   # Through [0x03, 0xBE] -- offset by Program id
-    '__0x03, 0xC0__':       [0x03, 0xC0],   # 1
-    '__0x03, 0xC1__':       [0x03, 0xC1],   # 1
-    '__0x03, 0xC2__':       [0x03, 0xC2],   # 1441
-    '__0x03, 0xC3__':       [0x03, 0xC3],   # 0
-    'SOFT_PRIME_COUNTER':   [0x03, 0xC4],   # Error 11 when trying to set.
+    "__0x01, 0xC4__": [0x01, 0xC4],  # 100
+    "__0x01, 0xFE__": [0x01, 0xFE],  # Changes often, generally in increments of 0x40.
+    "ACTUAL_RPM": [0x02, 0x06],
+    "__0x02, 0x0A__": [
+        0x02,
+        0x0A,
+    ],  # Always just a bit lower than Watts from PUMP_STATUS
+    "__0x02, 0x1A__": [
+        0x02,
+        0x1A,
+    ],  # [0x00, 0x00] to [0x51, 0x07] on SVRS alarm, back to 0 on reprime
+    "SVRS_ALARM": [
+        0x02,
+        0x1C,
+    ],  # [0x00, 0x00] to [0xff, 0xff] on SVRS alarm, back to 0 on reprime
+    "CONTRAST": [0x02, 0xBD],
+    "ADDRESS": [0x02, 0xC0],
+    "TARGET_RPM": [0x02, 0xC4],
+    "RAMP": [0x02, 0xD1],
+    "PRIME_DELAY": [0x02, 0xD2],
+    "GPM": [0x02, 0xE4],
+    "__0x03, 0x00__": [0x03, 0x00],  # 7860
+    "__0x03, 0x16__": [0x03, 0x16],  # 1600
+    "PRIME_SENSITIVITY": [0x03, 0x17],
+    "__0x03, 0x18__": [0x03, 0x18],  # 50    # Vacuum Flow?
+    "__0x03, 0x19__": [0x03, 0x19],  # 55    # Max Priming Flow?
+    "SVRS_RESTART_TIMER": [0x03, 0x1A],
+    "SVRS_RESTART_ENABLE": [0x03, 0x1B],
+    "RUNNING_PROGRAM": [0x03, 0x21],
+    "__0x03, 0x22__": [0x03, 0x22],  # 0
+    "__0x03, 0x23__": [0x03, 0x23],  # 0
+    "__0x03, 0x24__": [0x03, 0x24],  # 0
+    "__0x03, 0x25__": [0x03, 0x25],  # 0
+    "__0x03, 0x26__": [0x03, 0x26],  # 0
+    "__0x03, 0x27__": [
+        0x03,
+        0x27,
+    ],  # Through [0x03, 0x2A] -- offset by Program id.  Related to Program RPM?
+    "SET_TIMER": [0x03, 0x2B],
+    "__0x03, 0x2C__": [0x03, 0x2C],  # 2
+    "__0x03, 0x2D__": [0x03, 0x2D],  # 1
+    "__0x03, 0x2E__": [0x03, 0x2E],  # 0
+    "CELSIUS": [0x03, 0x30],
+    "24_HOUR": [0x03, 0x31],
+    "__0x03, 0x34__": [0x03, 0x34],  # 3445
+    "__0x03, 0x35__": [0x03, 0x35],  # 1115
+    "__0x03, 0x36__": [0x03, 0x36],  # 10  Error 25 if I try to set it to anything
+    "__0x03, 0x37__": [0x03, 0x37],  # 1
+    "__0x03, 0x38__": [0x03, 0x38],  # 0
+    "__0x03, 0x39__": [0x03, 0x39],  # 3445
+    "__0x03, 0x3A__": [0x03, 0x3A],  # 1115
+    "__0x03, 0x3B__": [0x03, 0x3B],  # 10  Error 25 if I try to set it to anything
+    "__0x03, 0x3C__": [0x03, 0x3C],  # 2
+    "__0x03, 0x3D__": [0x03, 0x3D],  # 0
+    "__0x03, 0x3E__": [0x03, 0x3E],  # 0
+    "PROGRAM_MODE": [0x03, 0x85],  # Through [0x03, 0x8C] -- offset by Program id
+    "PROGRAM_RPM": [0x03, 0x8D],  # Through [0x03, 0x94] -- offset by Program id
+    "SCHEDULE_START": [0x03, 0x95],  # Through [0x03, 0x9C] -- offset by Program id
+    "SCHEDULE_END": [0x03, 0x9D],  # Through [0x03, 0xA4] -- offset by Program id
+    "EGG_TIMER": [0x03, 0xA5],  # Through [0x03, 0xAC] -- offset by Program id
+    "TIME_OUT_TIMER": [0x03, 0xAD],
+    "QUICK_RPM": [0x03, 0xAE],
+    "QUICK_TIMER": [0x03, 0xAF],
+    "ANTIFREEZE_ENABLE": [0x03, 0xB0],
+    "ANTIFREEZE_RPM": [0x03, 0xB1],
+    "ANTIFREEZE_TEMP": [0x03, 0xB2],
+    "PRIME_ENABLE": [0x03, 0xB3],
+    "__0x03, 0xB4__": [0x03, 0xB4],  # 3450 Prime RPM?
+    "PRIME_MAX_TIME": [0x03, 0xB5],
+    "MIN_RPM": [0x03, 0xB6],
+    "MAX_RPM": [0x03, 0xB7],
+    "PASSWORD_ENABLE": [0x03, 0xB8],
+    "PASSWORD_TIMEOUT": [0x03, 0xB9],
+    "PASSWORD": [0x03, 0xBA],
+    "PROGRAM_RPM_ALT": [0x03, 0xBB],  # Through [0x03, 0xBE] -- offset by Program id
+    "__0x03, 0xC0__": [0x03, 0xC0],  # 1
+    "__0x03, 0xC1__": [0x03, 0xC1],  # 1
+    "__0x03, 0xC2__": [0x03, 0xC2],  # 1441
+    "__0x03, 0xC3__": [0x03, 0xC3],  # 0
+    "SOFT_PRIME_COUNTER": [0x03, 0xC4],  # Error 11 when trying to set.
 }
 
 WEEKDAYS = {
-    'SUNDAY':       1,
-    'MONDAY':       2,
-    'TUESDAY':      4,
-    'WEDNESDAY':    8,
-    'THURSDAY':     16,
-    'FRIDAY':       32,
-    'SATURDAY':     64,
+    "SUNDAY": 1,
+    "MONDAY": 2,
+    "TUESDAY": 4,
+    "WEDNESDAY": 8,
+    "THURSDAY": 16,
+    "FRIDAY": 32,
+    "SATURDAY": 64,
+}
+
+PUMP_MODES = {
+    "OFF": 0,
+    "PRIMING": 17,
+    "PROGRAM_1": 1,
+    "PROGRAM_2": 2,
+    "PROGRAM_3": 3,
+    "PROGRAM_4": 4,
+    "MANUAL": 9,
 }
 
 
 def bytelist(x):
-    return list(x.to_bytes(2, byteorder='big'))
+    return list(x.to_bytes(2, byteorder="big"))
 
 
-class Pump():
-    def __init__(self, id):
+class Pump:
+    # Minimum delay between consecutive RS485 commands (seconds).
+    # Prevents bus saturation when bulk-reading config registers.
+    MIN_COMMAND_INTERVAL = 0.15  # 150ms
+    _last_command_time = 0  # Class-level: shared across all Pump instances on the same bus
+
+    def __init__(self, id, controller_source=CONTROLLER_SOURCE):
         # self._address = ADDRESSES["INTELLIFLO_PUMP_" + str(index)]
         self._address = 0x60 + id - 1
+        self._controller_source = controller_source
+        self._program_speed_types = {}
 
     def send(self, action, data=None):
-        return Packet(dst=self.address, action=action, data=data).send()
+        # Enforce minimum gap between RS485 commands to avoid bus saturation
+        elapsed = time.time() - Pump._last_command_time
+        if elapsed < Pump.MIN_COMMAND_INTERVAL:
+            time.sleep(Pump.MIN_COMMAND_INTERVAL - elapsed)
+        Pump._last_command_time = time.time()
+
+        logger.debug(
+            f"Sending action {hex(action)} to pump at address {hex(self.address)} with data: {data}"
+        )
+        return Packet(
+            dst=self.address,
+            src=self._controller_source,
+            action=action,
+            data=data,
+        ).send()
 
     def ping(self):
         response = self.send(0x00)
-        if response.payload == [Packet.HEADER,
-                                Packet.VERSION,
-                                0x21,
-                                self.address,
-                                0,
-                                0]:
+        if response.payload == [
+            Packet.HEADER,
+            Packet.VERSION,
+            self._controller_source,
+            self.address,
+            0,
+            0,
+        ]:
             return True
         return False
 
+    def _set_run_state_once(self, state):
+        response = self.send(0x06, state)
+        if response.action == 0xFF:
+            error_code = response.data[0] if response.data else "unknown"
+            raise ValueError(f"Pump returned error code {error_code} for run state {state}")
+        return response
+
+    def _apply_manual_run(self, rpm):
+        rpm = int(rpm)
+        self.remote_control = True
+        self._set_run_state_once(PUMP_RUNNING)
+        self.trpm = rpm
+        self.remote_control = True
+        return self.status
+
+    def manual_run(self, rpm):
+        logger.info(f"Applying manual run at {rpm} RPM")
+        return self._apply_manual_run(rpm)
+
+    def refresh_manual_run(self, rpm):
+        logger.debug(f"Refreshing manual run at {rpm} RPM")
+        return self._apply_manual_run(rpm)
+
     def set(self, address, value):
-        return self.send(0x01, address + bytelist(value)).to_int
+        # if the value is the same as the current value, don't send it
+        # current_value = self.get(address)
+        # if current_value == value:
+        #    print(f"Value for {address} is already set to {value}, not sending.")
+        #    return current_value
+        logger.debug(f"[PROGRAM-SAVE] Pump.set() addr={address}, value={value}, bytes={bytelist(value)}")
+        response = self.send(0x01, address + bytelist(value))
+        logger.debug(
+            f"[PROGRAM-SAVE] Pump.set() response: action={hex(response.action)}, "
+            f"data={response.data}"
+        )
+        if response.action == 0xFF:
+            error_code = response.data[0] if response.data else "unknown"
+            raise ValueError(
+                f"Pump returned error code {error_code} for set address {address} value {value}"
+            )
+        return response.to_int
 
     def get(self, address):
-        return self.send(0x02, address).to_int
+        response = self.send(0x02, address)
+        if response.action == 0xFF:
+            error_code = response.data[0] if response.data else "unknown"
+            raise ValueError(f"Pump returned error code {error_code} for address {address}")
+        return response.to_int
 
     @property
     def time(self):
@@ -146,12 +238,15 @@ class Pump():
     @property
     def remote_control(self):
         response = self.send(0x04)
-        return response.data[0] == 1
+        logger.debug(f"Remote control state response: {response.data}")
+        return response.data[0] == 0xFF
 
     @remote_control.setter
     def remote_control(self, state):
-        state = 0xFF if state else 0x00
-        self.send(0x04, state)
+        state = REMOTE_CONTROL_EXTERNAL if state else REMOTE_CONTROL_INTERNAL
+        response = self.send(0x04, state)
+        if response.data[0] == 0x00:
+            response.close()
         # This function runs successfully on the pump, but doesn't actually
         # change the state.  Right after setting to 0, requesting the value
         # still returns 1.  Being that we're a remote controller by definition
@@ -169,7 +264,7 @@ class Pump():
 
     @selected_program.setter
     def selected_program(self, program):
-        self.send(0x05, [program])
+        self.send(0x05, program + 1)
         # As above, this runs successfully on the pump and the return payload
         # looks like the setting was updated, but requesting the value after
         # updating it, it always returns 1.  Going to have to play more with
@@ -177,7 +272,7 @@ class Pump():
 
     @property
     def run(self):
-        return self.status['run']
+        return self.status["run"]
         # response = self.send(0x06)
         # return response.data
         # Calling 0x06 without any parameters always returns 1, but status[0]
@@ -185,29 +280,47 @@ class Pump():
 
     @run.setter
     def run(self, state):
-        state = 0x0A if state else 0x04
-        print("Attempting to set run:", state)
+        state = PUMP_RUNNING if state else PUMP_STOPPED
+        logger.debug("Attempting to set run: %s", state)
         for x in range(0, 120):
-            self.send(0x06, state)
-            print("Desired run state:", state, "Actual run state:", self.run)
+            self._set_run_state_once(state)
+            logger.debug("Desired run state: %s  Actual run state: %s", state, self.run)
             if self.run == state:
-                print("Successfully set run:", state)
+                logger.info(f"Successfully set run: {state}")
                 return
             sleep(1)
         raise ValueError("Did not achieve desired run state within 2-minutes.")
+
+    # stop by turning off the run state then turning it back on
+    @property
+    def stop(self):
+        logger.debug("Stopping pump...")
+        self.run = 0
+        sleep(1)
+        self.run = 1
+        logger.debug("Pump stopped.")
+        return self.mode
 
     @property
     def status(self):
         response = self.send(0x07)
         data = response.data
+        if data is None or len(data) < 15:
+            actual = 0 if data is None else len(data)
+            raise ValueError(
+                f"Truncated status response from pump "
+                f"(expected >= 15 data bytes, got {actual})"
+            )
         return {
-            'run':      data[0],
-            'mode':     data[1],
-            'drive':    data[2],
-            'watts':    256*data[3]+data[4],
-            'rpm':      256*data[5]+data[6],
-            'timer':    [data[11], data[12]],
-            'time':     [data[13], data[14]]
+            "run": data[0],
+            "mode": data[1],
+            "drive": data[2],
+            "watts": 256 * data[3] + data[4],
+            "rpm": 256 * data[5] + data[6],
+            "gpm": data[7],
+            "pct": data[8],
+            "timer": [data[11], data[12]],
+            "time": [data[13], data[14]],
         }
 
     # @property
@@ -225,64 +338,80 @@ class Pump():
 
     @address.setter
     def address(self, address):
+        """
         self._address = Packet(
             dst=self.address,
             action=ACTIONS['SET'],
             data=SETTING['ADDRESS'] + bytelist(int(address))
         ).send().to_int
+        """
+        # use self.set(SETTING['ADDRESS'], address)
+        self._address = self.set(SETTING["ADDRESS"], address)
 
     @property
     def ampm(self):
-        return not self.send(ACTIONS['GET'], SETTING['24_HOUR']).to_int
+        # return not self.send(ACTIONS['GET'], SETTING['24_HOUR']).to_int
+        return not self.get(SETTING["24_HOUR"])
 
     @ampm.setter
     def ampm(self, state):
-        self.send(ACTIONS['SET'], SETTING['24_HOUR'] + bytelist(not state))
+        # self.send(ACTIONS['SET'], SETTING['24_HOUR'] + bytelist(not state))
+        self.set(SETTING["24_HOUR"], not state)
 
     @property
     def antifreeze_enable(self):
-        return self.send(ACTIONS['GET'], SETTING['ANTIFREEZE_ENABLE']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['ANTIFREEZE_ENABLE']).to_int
+        return self.get(SETTING["ANTIFREEZE_ENABLE"])
 
     @antifreeze_enable.setter
     def antifreeze_enable(self, state):
-        self.send(ACTIONS['SET'], SETTING['ANTIFREEZE_ENABLE'] + bytelist(state))
+        # self.send(ACTIONS['SET'], SETTING['ANTIFREEZE_ENABLE'] + bytelist(state))
+        self.set(SETTING["ANTIFREEZE_ENABLE"], state)
 
     @property
     def antifreeze_rpm(self):
-        return self.send(ACTIONS['GET'], SETTING['ANTIFREEZE_RPM']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['ANTIFREEZE_RPM']).to_int
+        return self.get(SETTING["ANTIFREEZE_RPM"])
 
     @antifreeze_rpm.setter
     def antifreeze_rpm(self, rpm):
-        self.send(ACTIONS['SET'], SETTING['ANTIFREEZE_RPM'] + bytelist(rpm))
+        # self.send(ACTIONS['SET'], SETTING['ANTIFREEZE_RPM'] + bytelist(rpm))
+        self.set(SETTING["ANTIFREEZE_RPM"], rpm)
 
     @property
     def antifreeze_temp(self):
-        return self.send(ACTIONS['GET'], SETTING['ANTIFREEZE_TEMP']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['ANTIFREEZE_TEMP']).to_int
+        return self.get(SETTING["ANTIFREEZE_TEMP"])
 
     @antifreeze_temp.setter
     def antifreeze_temp(self, temp):
-        self.send(ACTIONS['SET'], SETTING['ANTIFREEZE_TEMP'] + bytelist(temp))
+        # self.send(ACTIONS['SET'], SETTING['ANTIFREEZE_TEMP'] + bytelist(temp))
+        self.set(SETTING["ANTIFREEZE_TEMP"], temp)
 
     @property
     def celsius(self):
-        return self.send(ACTIONS['GET'], SETTING['CELSIUS']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['CELSIUS']).to_int
+        return self.get(SETTING["CELSIUS"])
 
     @celsius.setter
     def celsius(self, state):
-        self.send(ACTIONS['SET'], SETTING['CELSIUS'] + bytelist(state))
+        # self.send(ACTIONS['SET'], SETTING['CELSIUS'] + bytelist(state))
+        self.set(SETTING["CELSIUS"], state)
 
     @property
     def contrast(self):
-        return self.send(ACTIONS['GET'], SETTING['CONTRAST']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['CONTRAST']).to_int
+        return self.get(SETTING["CONTRAST"])
 
     @contrast.setter
     def contrast(self, state):
-        self.send(ACTIONS['SET'], SETTING['CONTRAST'] + bytelist(state))
+        # self.send(ACTIONS['SET'], SETTING['CONTRAST'] + bytelist(state))
+        self.set(SETTING["CONTRAST"], state)
 
     @property
     def dt(self):
-        return self.send(ACTIONS['GET_DATETIME']).payload
-        # return self.send(0x03)
+        return self.send(ACTIONS["GET_DATETIME"]).data
+
     # Need to actually implement this one
     # Error 19: ?
     # Error 8: Missing parameters?
@@ -290,17 +419,19 @@ class Pump():
 
     @dt.setter
     def dt(self, data):
-        return self.send(ACTIONS['SET_DATETIME'],
-                         [
-                            data['hour'],
-                            data['minute'],
-                            WEEKDAYS[data['dow']],
-                            data['dom'],
-                            data['month'],
-                            data['year'],
-                            data['dst'],
-                            data['auto_dst']
-                         ])
+        return self.send(
+            ACTIONS["SET_DATETIME"],
+            [
+                data["hour"],
+                data["minute"],
+                WEEKDAYS[data["dow"]],
+                data["dom"],
+                data["month"],
+                data["year"],
+                data["dst"],
+                data["auto_dst"],
+            ],
+        )
 
     @property
     def fahrenheit(self):
@@ -320,97 +451,119 @@ class Pump():
 
     @property
     def max_rpm(self):
-        return self.send(ACTIONS['GET'], SETTING['MAX_RPM']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['MAX_RPM']).to_int
+        return self.get(SETTING["MAX_RPM"])
 
     @max_rpm.setter
     def max_rpm(self, rpm):
-        self.send(ACTIONS['SET'], SETTING['MAX_RPM'] + bytelist(rpm))
+        # self.send(ACTIONS['SET'], SETTING['MAX_RPM'] + bytelist(rpm))
+        self.set(SETTING["MAX_RPM"], rpm)
 
     @property
     def min_rpm(self):
-        return self.send(ACTIONS['GET'], SETTING['MIN_RPM']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['MIN_RPM']).to_int
+        return self.get(SETTING["MIN_RPM"])
 
     @min_rpm.setter
     def min_rpm(self, rpm):
-        self.send(ACTIONS['SET'], SETTING['MIN_RPM'] + bytelist(rpm))
+        # self.send(ACTIONS['SET'], SETTING['MIN_RPM'] + bytelist(rpm))
+        self.set(SETTING["MIN_RPM"], rpm)
 
     @property
     def mode(self):
-        return self.status['mode']
+        return self.status["mode"]
 
     @property
     def password_enable(self):
-        return self.send(ACTIONS['GET'], SETTING['PASSWORD_ENABLE']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['PASSWORD_ENABLE']).to_int
+        return self.get(SETTING["PASSWORD_ENABLE"])
 
     @password_enable.setter
     def password_enable(self, state):
-        self.send(ACTIONS['SET'], SETTING['PASSWORD_ENABLE'] + bytelist(state))
+        # self.send(ACTIONS['SET'], SETTING['PASSWORD_ENABLE'] + bytelist(state))
+        self.set(SETTING["PASSWORD_ENABLE"], state)
 
     @property
     def password_timeout(self):
-        return self.send(ACTIONS['GET'], SETTING['PASSWORD_TIMEOUT']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['PASSWORD_TIMEOUT']).to_int
+        return self.get(SETTING["PASSWORD_TIMEOUT"])
 
     @password_timeout.setter
     def password_timeout(self, timeout):
-        self.send(ACTIONS['SET'], SETTING['PASSWORD_TIMEOUT'] + bytelist(timeout))
+        # self.send(ACTIONS['SET'], SETTING['PASSWORD_TIMEOUT'] + bytelist(timeout))
+        self.set(SETTING["PASSWORD_TIMEOUT"], timeout)
 
     @property
     def password(self):
-        return self.send(ACTIONS['GET'], SETTING['PASSWORD']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['PASSWORD']).to_int
+        return self.get(SETTING["PASSWORD"])
 
     @password.setter
     def password(self, password):
-        self.send(ACTIONS['SET'], SETTING['PASSWORD'] + bytelist(password))
+        # self.send(ACTIONS['SET'], SETTING['PASSWORD'] + bytelist(password))
+        self.set(SETTING["PASSWORD"], password)
 
     @property
     def prime_enable(self):
-        return self.send(ACTIONS['GET'], SETTING['PRIME_ENABLE']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['PRIME_ENABLE']).to_int
+        return self.get(SETTING["PRIME_ENABLE"])
 
     @prime_enable.setter
     def prime_enable(self, state):
-        self.send(ACTIONS['SET'], SETTING['PRIME_ENABLE'] + bytelist(state))
+        # self.send(ACTIONS['SET'], SETTING['PRIME_ENABLE'] + bytelist(state))
+        self.set(SETTING["PRIME_ENABLE"], state)
 
     @property
     def prime_delay(self):
-        return self.send(ACTIONS['GET'], SETTING['PRIME_DELAY']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['PRIME_DELAY']).to_int
+        return self.get(SETTING["PRIME_DELAY"])
 
     @prime_delay.setter
     def prime_delay(self, minutes):
-        self.send(ACTIONS['SET'], SETTING['PRIME_DELAY'] + bytelist(minutes))
+        # self.send(ACTIONS['SET'], SETTING['PRIME_DELAY'] + bytelist(minutes))
+        self.set(SETTING["PRIME_DELAY"], minutes)
 
     @property
     def prime_max_time(self):
-        return self.send(ACTIONS['GET'], SETTING['PRIME_MAX_TIME']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['PRIME_MAX_TIME']).to_int
+        return self.get(SETTING["PRIME_MAX_TIME"])
 
     @prime_max_time.setter
     def prime_max_time(self, minutes):
-        self.send(ACTIONS['SET'], SETTING['PRIME_MAX_TIME'] + bytelist(minutes))
+        # self.send(ACTIONS['SET'], SETTING['PRIME_MAX_TIME'] + bytelist(minutes))
+        self.set(SETTING["PRIME_MAX_TIME"], minutes)
 
     @property
     def prime_sensitivity(self):
-        return self.send(ACTIONS['GET'], SETTING['PRIME_SENSITIVITY']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['PRIME_SENSITIVITY']).to_int
+        return self.get(SETTING["PRIME_SENSITIVITY"])
 
     @prime_sensitivity.setter
     def prime_sensitivity(self, sensitivity):
-        self.send(ACTIONS['SET'], SETTING['PRIME_SENSITIVITY'] + bytelist(sensitivity))
+        # self.send(ACTIONS['SET'], SETTING['PRIME_SENSITIVITY'] + bytelist(sensitivity))
+        self.set(SETTING["PRIME_SENSITIVITY"], sensitivity)
 
     @property
     def quick_rpm(self):
-        return self.send(ACTIONS['GET'], SETTING['QUICK_RPM']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['QUICK_RPM']).to_int
+        return self.get(SETTING["QUICK_RPM"])
 
     @quick_rpm.setter
     def quick_rpm(self, rpm):
-        self.send(ACTIONS['SET'], SETTING['QUICK_RPM'] + bytelist(rpm))
+        # self.send(ACTIONS['SET'], SETTING['QUICK_RPM'] + bytelist(rpm))
+        self.set(SETTING["QUICK_RPM"], rpm)
 
     @property
     def quick_timer(self):
-        minutes = self.send(ACTIONS['GET'], SETTING['QUICK_TIMER']).to_int
-        return [int(minutes/60), minutes % 60]
+        # minutes = self.send(ACTIONS['GET'], SETTING['QUICK_TIMER']).to_int
+        minutes = self.get(SETTING["QUICK_TIMER"])
+        return [int(minutes / 60), minutes % 60]
 
     @quick_timer.setter
     def quick_timer(self, time):
         minutes = 60 * time[0] + time[1]
-        self.send(ACTIONS['SET'], SETTING['QUICK_TIMER'] + bytelist(minutes))
+        # self.send(ACTIONS['SET'], SETTING['QUICK_TIMER'] + bytelist(minutes))
+        self.set(SETTING["QUICK_TIMER"], minutes)
 
     def program(self, index):
         return Program(self, index)
@@ -421,89 +574,103 @@ class Pump():
 
     @property
     def ramp(self):
-        return self.send(ACTIONS['GET'], SETTING['RAMP']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['RAMP']).to_int
+        return self.get(SETTING["RAMP"])
 
     @ramp.setter
     def ramp(self, rpm):
-        self.send(ACTIONS['SET'], SETTING['RAMP'] + bytelist(rpm))
+        # self.send(ACTIONS['SET'], SETTING['RAMP'] + bytelist(rpm))
+        self.set(SETTING["RAMP"], rpm)
 
     @property
     def rpm(self):
-        return self.get(SETTING['ACTUAL_RPM'])
+        # return self.get(SETTING['ACTUAL_RPM'])
+        return self.get(SETTING["RPM"])
 
     @rpm.setter
     def rpm(self, rpm):
-        print(f'Setting RPM: {rpm}')
+        logger.debug(f"Setting RPM: {rpm}")
         count = 0
-        self.set(SETTING['TARGET_RPM'], rpm)
+        self.set(SETTING["TARGET_RPM"], rpm)
         while self.rpm != self.trpm:
-            print(f'Target RPM: {self.trpm}, Actual RPM: {self.rpm}')
+            logger.debug(f"Target RPM: {self.trpm}, Actual RPM: {self.rpm}")
             sleep(1)
             count += 1
             if count > 120:
-                self.set(SETTING['TARGET_RPM'], rpm)
+                self.set(SETTING["TARGET_RPM"], rpm)
                 count = 0
-        print(f'{Style.OKGREEN}Target RPM: {self.trpm}, Actual RPM: {self.rpm}{Style.ENDC}')
+        logger.info(
+            f"Target RPM: {self.trpm}, Actual RPM: {self.rpm}"
+        )
 
     @property
     def trpm(self):
-        return self.get(SETTING['TARGET_RPM'])
+        return self.get(SETTING["TARGET_RPM"])
 
     @trpm.setter
     def trpm(self, rpm):
-        self.set(SETTING['TARGET_RPM'], rpm)
+        self.set(SETTING["TARGET_RPM"], rpm)
 
     def maintain_speed(self):
         self.trpm = self.rpm
 
     @property
     def soft_prime_counter(self):
-        return self.send(ACTIONS['GET'], SETTING['SOFT_PRIME_COUNTER']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['SOFT_PRIME_COUNTER']).to_int
+        return self.get(SETTING["SOFT_PRIME_COUNTER"])
 
     @soft_prime_counter.setter
     def soft_prime_counter(self, minutes):
-        self.send(ACTIONS['SET'], SETTING['SOFT_PRIME_COUNTER'] + bytelist(minutes))
+        # self.send(ACTIONS['SET'], SETTING['SOFT_PRIME_COUNTER'] + bytelist(minutes))
+        self.set(SETTING["SOFT_PRIME_COUNTER"], minutes)
 
     @property
     def svrs_alarm(self):
-        return self.send(ACTIONS['GET'], SETTING['SVRS_ALARM']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['SVRS_ALARM']).to_int
+        return self.get(SETTING["SVRS_ALARM"])
 
     @property
     def svrs_restart_enable(self):
-        return self.send(ACTIONS['GET'], SETTING['SVRS_RESTART_ENABLE']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['SVRS_RESTART_ENABLE']).to_int
+        return self.get(SETTING["SVRS_RESTART_ENABLE"])
 
     @svrs_restart_enable.setter
     def svrs_restart_enable(self, state):
-        self.send(ACTIONS['SET'], SETTING['SVRS_RESTART_ENABLE'] + bytelist(state))
+        # self.send(ACTIONS['SET'], SETTING['SVRS_RESTART_ENABLE'] + bytelist(state))
+        self.set(SETTING["SVRS_RESTART_ENABLE"], state)
 
     @property
     def svrs_restart_timer(self):
-        return self.send(ACTIONS['GET'], SETTING['SVRS_RESTART_TIMER']).to_int
+        # return self.send(ACTIONS['GET'], SETTING['SVRS_RESTART_TIMER']).to_int
+        return self.get(SETTING["SVRS_RESTART_TIMER"])
 
     @svrs_restart_timer.setter
     def svrs_restart_timer(self, seconds):
-        self.send(ACTIONS['SET'], SETTING['SVRS_RESTART_TIMER'] + bytelist(seconds))
+        # self.send(ACTIONS['SET'], SETTING['SVRS_RESTART_TIMER'] + bytelist(seconds))
+        self.set(SETTING["SVRS_RESTART_TIMER"], seconds)
 
     @property
     def timer(self):
-        return self.status['timer']
+        return self.status["timer"]
 
     @property
     def time_out_timer(self):
-        minutes = self.send(ACTIONS['GET'], SETTING['TIME_OUT_TIMER']).to_int
-        return [int(minutes/60), minutes % 60]
+        # minutes = self.send(ACTIONS['GET'], SETTING['TIME_OUT_TIMER']).to_int
+        minutes = self.get(SETTING["TIME_OUT_TIMER"])
+        return [int(minutes / 60), minutes % 60]
 
     @time_out_timer.setter
     def time_out_timer(self, time):
         minutes = 60 * time[0] + time[1]
-        self.send(ACTIONS['SET'], SETTING['TIME_OUT_TIMER'] + bytelist(minutes))
+        # self.send(ACTIONS['SET'], SETTING['TIME_OUT_TIMER'] + bytelist(minutes))
+        self.set(SETTING["TIME_OUT_TIMER"], minutes)
 
     @property
     def watts(self):
-        return self.status['watts']
+        return self.status["watts"]
 
 
-class Program():
+class Program:
 
     PROGRAM_1 = 0x02
     PROGRAM_2 = 0x03
@@ -513,14 +680,15 @@ class Program():
     PROGRAM_6 = 0x07
     PROGRAM_7 = 0x08
     PROGRAM_8 = 0x09
-    QUICK_CLEAN = 0x0a
-    TIME_OUT = 0x0b
+    QUICK_CLEAN = 0x0A
+    TIME_OUT = 0x0B
 
     SCHEDULE_START = [0x03, 0x95]
     SCHEDULE_END = [0x03, 0x9D]
     EGG_TIMER = [0x03, 0xA5]
     MODE = [0x03, 0x85]
     RPM = [0x03, 0x8D]
+    RPM_ALT = [0x03, 0xBB]
 
     MANUAL_MODE = 0
     EGG_TIMER_MODE = 1
@@ -534,48 +702,193 @@ class Program():
     def my(self, address):
         return [address[0], address[1] + self.id - 1]
 
+    def _supports_alt_rpm(self):
+        return self.id <= 4
+
+    def _get_cached_speed_type(self):
+        cache = getattr(self.pump, "_program_speed_types", None)
+        if isinstance(cache, dict):
+            return cache.get(self.id)
+        return None
+
+    def _set_cached_speed_type(self, speed_type):
+        cache = getattr(self.pump, "_program_speed_types", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self.pump._program_speed_types = cache
+        cache[self.id] = speed_type
+
+    def _read_primary_speed(self):
+        return self.pump.get(self.my(Program.RPM))
+
+    def _read_alt_rpm(self):
+        if not self._supports_alt_rpm():
+            return None
+        try:
+            return self.pump.get(self.my(Program.RPM_ALT))
+        except Exception as exc:
+            logger.debug(
+                f"[PROGRAM-SAVE] Program {self.id} could not read alt rpm register: {exc}"
+            )
+            return None
+
+    def _infer_speed_type(self, primary_value=None, alt_value=None):
+        cached_speed_type = self._get_cached_speed_type()
+        if cached_speed_type in {"RPM", "GPM"}:
+            return cached_speed_type
+
+        if primary_value is None:
+            primary_value = self._read_primary_speed()
+        if alt_value is None:
+            alt_value = self._read_alt_rpm()
+
+        # The primary register behaves like the GPM register for values below
+        # the 140 GPM ceiling. When it sits at the ceiling and the alternate
+        # register has a valid RPM-sized value, treat the program as RPM-based.
+        if 0 < primary_value < 140:
+            return "GPM"
+        if primary_value == 140 and alt_value is not None and alt_value >= 450:
+            return "RPM"
+        if primary_value > 140:
+            return "RPM"
+        return "GPM" if 0 < primary_value <= 140 else "RPM"
+
+    def _write_speed_registers(self, value, speed_type):
+        primary_addr = self.my(Program.RPM)
+        logger.info(
+            f"[PROGRAM-SAVE] Program {self.id} write primary speed: addr={primary_addr}, value={value}"
+        )
+        primary_result = self.pump.set(primary_addr, value)
+        logger.info(
+            f"[PROGRAM-SAVE] Program {self.id} write primary speed result: {primary_result}"
+        )
+
+        self._set_cached_speed_type(speed_type)
+
+        if speed_type == "RPM" and self._supports_alt_rpm():
+            alt_addr = self.my(Program.RPM_ALT)
+            try:
+                logger.info(
+                    f"[PROGRAM-SAVE] Program {self.id} mirror alt speed: addr={alt_addr}, value={value}"
+                )
+                alt_result = self.pump.set(alt_addr, value)
+                logger.info(
+                    f"[PROGRAM-SAVE] Program {self.id} mirror alt speed result: {alt_result}"
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"[PROGRAM-SAVE] Program {self.id} alt rpm mirror failed: {exc}"
+                )
+
     @property
     def rpm(self):
-        return self.pump.get(self.my(Program.RPM))
+        addr = self.my(Program.RPM)
+        primary_value = self._read_primary_speed()
+        alt_value = self._read_alt_rpm()
+        speed_type = self._infer_speed_type(primary_value, alt_value)
+        value = primary_value
+
+        if speed_type == "RPM" and alt_value is not None and alt_value >= 450:
+            value = alt_value
+            logger.debug(
+                f"[PROGRAM-SAVE] Program {self.id} read rpm using alt register: "
+                f"primary={primary_value}, alt={alt_value}"
+            )
+        else:
+            logger.debug(
+                f"[PROGRAM-SAVE] Program {self.id} read rpm: addr={addr} -> {primary_value}"
+            )
+        return value
 
     @rpm.setter
     def rpm(self, rpm):
-        return self.pump.set(self.my(Program.RPM), rpm)
+        self._write_speed_registers(rpm, "RPM")
+
+    @property
+    def speed(self):
+        """Get the program speed value (RPM or GPM depending on speed_type)."""
+        primary_value = self._read_primary_speed()
+        if self.speed_type == "GPM" and 0 < primary_value <= 140:
+            return primary_value
+        return self.rpm
+
+    @speed.setter
+    def speed(self, value):
+        """Set the program speed value."""
+        self._write_speed_registers(value, "GPM")
+
+    @property
+    def speed_type(self):
+        """Infer the speed unit from the stored value.
+
+        Pentair IntelliFlo pumps store RPM (400-3450) and GPM (15-140)
+        in the same register. Values <= 140 are GPM; > 140 are RPM.
+        """
+        primary_value = self._read_primary_speed()
+        alt_value = self._read_alt_rpm()
+        return self._infer_speed_type(primary_value, alt_value)
 
     @property
     def mode(self):
-        return self.pump.get(self.my(Program.MODE))
+        addr = self.my(Program.MODE)
+        value = self.pump.get(addr)
+        logger.debug(f"[PROGRAM-SAVE] Program {self.id} read mode: addr={addr} -> {value}")
+        return value
 
     @mode.setter
     def mode(self, mode):
-        self.pump.set(self.my(Program.MODE), mode)
+        addr = self.my(Program.MODE)
+        logger.info(f"[PROGRAM-SAVE] Program {self.id} write mode: addr={addr}, value={mode}")
+        result = self.pump.set(addr, mode)
+        logger.info(f"[PROGRAM-SAVE] Program {self.id} write mode result: {result}")
 
     @property
     def egg_timer(self):
-        minutes = self.pump.get(self.my(Program.EGG_TIMER))
-        return [int(minutes/60), minutes % 60]
+        try:
+            minutes = self.pump.get(self.my(Program.EGG_TIMER))
+            return [int(minutes / 60), minutes % 60]
+        except (ValueError, Exception) as e:
+            logger.debug(f"Could not read egg_timer for program {self.id}: {e}")
+            return [0, 0]
 
     @egg_timer.setter
     def egg_timer(self, duration):
         minutes = 60 * duration[0] + duration[1]
+        logger.debug(
+            f"Setting egg timer for program {self.id} to {duration} ({minutes} minutes)"
+        )
         self.pump.set(self.my(Program.EGG_TIMER), minutes)
 
     @property
     def schedule_start(self):
-        minutes = self.pump.get(self.my(Program.SCHEDULE_START))
-        return [int(minutes/60), minutes % 60]
+        try:
+            minutes = self.pump.get(self.my(Program.SCHEDULE_START))
+            return [int(minutes / 60), minutes % 60]
+        except (ValueError, Exception) as e:
+            logger.debug(f"Could not read schedule_start for program {self.id}: {e}")
+            return [0, 0]
 
     @schedule_start.setter
     def schedule_start(self, time):
         minutes = 60 * time[0] + time[1]
+        logger.debug(
+            f"Setting schedule start for program {self.id} to {time} ({minutes} minutes)"
+        )
         self.pump.set(self.my(Program.SCHEDULE_START), minutes)
 
     @property
     def schedule_end(self):
-        minutes = self.pump.get(self.my(Program.SCHEDULE_END))
-        return [int(minutes/60), minutes % 60]
+        try:
+            minutes = self.pump.get(self.my(Program.SCHEDULE_END))
+            return [int(minutes / 60), minutes % 60]
+        except (ValueError, Exception) as e:
+            logger.debug(f"Could not read schedule_end for program {self.id}: {e}")
+            return [0, 0]
 
     @schedule_end.setter
     def schedule_end(self, time):
         minutes = 60 * time[0] + time[1]
+        logger.debug(
+            f"Setting schedule end for program {self.id} to {time} ({minutes} minutes)"
+        )
         self.pump.set(self.my(Program.SCHEDULE_END), minutes)
